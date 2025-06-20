@@ -475,7 +475,7 @@ def try_create_dir(path):
 
 
 if __name__ == '__main__': 
-   path = '/storage/4F00-1E00/Ringtones'
+   path = ''
    if path:
        os.chdir(path)
        print(f'Current workdir: {path}')
