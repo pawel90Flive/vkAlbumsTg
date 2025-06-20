@@ -9,11 +9,229 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver import ActionChains
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
 
+from video_download import video_download as vd
+from parse_cookies import get_cookies_from_file
+
+import pickle
+
 
 def save(src, fname='page.html'):
     method = 'w' if isinstance(src, str) else 'wb'
     with open(fname, method) as file:
         file.write(src) 
+
+
+def get_content_tabs():
+    url = 'https://m.vk.com/?'
+    driver = make_driver()
+    print(f'getting {url}')
+    driver.get(url)
+    save(driver.page_source, 'comm.html')
+    vkuiTab = try_except(NoSuchElementException,
+                      'vkuiTabs get is fail...',
+                      driver.find_element,
+                      By.CLASS_NAME, 'vkuiTabs__in')
+    vtabs = try_except(NoSuchElementException,
+                      'vtabs get is fail...',
+                      vkuiTab.find_elements,
+                      By.XPATH, '*')
+    for vt in vtabs:
+        print(vt.get_attribute('href'))
+
+
+
+#############################################
+
+
+def collect_vli(driver, v_or_pl=None):
+    log = 'playlists'
+    if v_or_pl:
+        log = 'videos'
+
+
+    paginator= try_except(NoSuchElementException,
+                      'paginator getting...',
+                      driver.find_element,
+                      By.CLASS_NAME,
+                      'vkuiSpinner__host')
+    in_after = try_except(NoSuchElementException,
+                      'in_after get is fail...',
+                      driver.find_element,
+                      By.CLASS_NAME,
+                      'vkuiPanel__inAfter')
+    i = 0
+    while paginator:
+        driver.execute_script("arguments[0].scrollIntoView();", in_after)  
+        print(f'{i}: scrolling {log} ...', end='\r')
+        i += 1
+        paginator= try_except(NoSuchElementException,
+                      'paginator get is fail...',
+                      driver.find_element,
+                      By.CLASS_NAME,
+                      'vkuiSpinner__host',
+                      enter_before=1)
+    print(f'{i}: scrolling {log} is done') 
+    print(f'collecting vli from {log}... dis is takes a time') 
+    
+    vli = try_except(NoSuchElementException,
+                    'video_list_item get is fail...',
+                    driver.find_elements,
+                    By.CSS_SELECTOR,
+                    'a[data-testid="video_list_item"]')
+    if not vli:
+        vli = []
+    print(f'collected vli from {log}: {len(vli)}') 
+    return vli
+
+
+def collect_playlists(vli):
+    print(f'collecting playlists: {len(vli)}')
+    playlists = []
+    for i, v in enumerate(vli):     
+        p = prepare_playlist(i, v)
+        playlists.append(p)
+    
+    return playlists
+
+
+def prepare_playlist(i, v):
+    url = v.get_attribute('href')
+    title = try_except(NoSuchElementException,
+              'title get is fail...',
+              v.find_element,
+              By.CSS_SELECTOR,
+              "div[class*='VideoListItem__title']")
+    count = try_except(NoSuchElementException,
+              'count get is fail...',
+              v.find_element,
+              By.CSS_SELECTOR,
+              "span[class*='VideoListItem__subtitle']")
+    amount = count.get_attribute('innerHTML')
+    amount = int(amount[:-6]) # '467 видео'
+    title_text = title.get_attribute("innerHTML")
+    name = f'{i}_{title_text}_{amount}'  
+    return (url, name, amount)
+
+
+def dowload_playlists(comm_name, playlists, driver):
+    print(f'downloading {len(playlists)} playlists')
+    total_video_urls = []
+    for pl in playlists:
+        print(f'{pl[1]} downloading with {pl[2]} videos')
+        path = f'{comm_name}/playlists/{pl[1]}'
+        try_create_dir(path)
+        if pl[2]:
+            driver.get(pl[0])
+            v_urls = dump_or_get_data(driver, path, pl[1], 0)
+            total_video_urls += v_urls
+            download_video_list(path, v_urls)
+    
+    return total_video_urls
+
+
+def dump_or_get_data(driver, path, pickle_name, is_pl=False):
+    data = []
+    pickle_path = f'{path}/{pickle_name}.pkl'
+    try:
+        data = pickle.load(open(pickle_path, "rb"))
+        print(f'using cached video urls for {pickle_name}...')
+    except(FileNotFoundError):
+        print(f'no cached video urls for {pickle_name}.')
+    if not data:
+        if is_pl:
+            pl_vli = collect_vli(driver)
+            data = collect_playlists(pl_vli)
+        else:
+            vli = collect_vli(driver, 1)
+            data = [v.get_attribute('href') for v in vli] 
+        pickle.dump(data, open(pickle_path,"wb"))
+    return data
+
+def download_video_list(path, video_urls):
+    vu_len = len(video_urls)
+    print(f'START TO DOWNLOAD {vu_len} VIDEOS!')
+    for i, vu in enumerate(video_urls):
+        vd(path, vu, i, vu_len)
+    return vu_len
+
+
+def download_all_videos(url=None, driver=None):
+    url = 'https://m.vkvideo.ru/@metaaaa' # start for videos
+    if not driver:
+        driver = make_driver()
+    print(f'getting {url}')
+    driver.get(url)
+
+    community_name = try_except(NoSuchElementException,
+                      'community_name get is fail...',
+                      driver.find_element,
+                      By.TAG_NAME,
+                      'h4').get_attribute('innerHTML')
+    print(f'scrapping from {community_name}')
+    paths_to_create = [f'{community_name}',
+                       f'{community_name}/playlists',
+                       f'{community_name}/videos']
+
+    for p in paths_to_create:
+        try_create_dir(p)
+
+    see_all = try_except(NoSuchElementException,
+                  'see_all get is fail...',
+                  driver.find_element,
+                  By.CSS_SELECTOR,
+                  'a[data-testid="market-group-items-header-open-section"]')
+    
+    playlists = []
+    tvc_pl = 0
+    if see_all:
+        playlists_url = see_all.get_attribute('href')
+        driver.get(playlists_url)
+        
+        pl_path = f'{community_name}/playlists'
+        pl_pickle_path = f'playlists'
+        playlists = dump_or_get_data(driver, 
+                                 pl_path, 
+                                 pl_pickle_path,
+                                 1)
+        tvu_pl = dowload_playlists(community_name, playlists, driver)  
+        driver.get(url)
+    v_path = f'{community_name}/videos'
+    v_pickle_path = f'videos'
+    all_urls = dump_or_get_data(driver, 
+                             v_path, 
+                             v_pickle_path,
+                             0)
+    pl_urls = [u for u in all_urls if 'videoplaylist' in u]
+    
+    if pl_urls and not see_all:
+        vli = try_except(NoSuchElementException,
+                    'video_list_item get is fail...',
+                    driver.find_elements,
+                    By.CSS_SELECTOR,
+                    'a[data-testid="video_list_item"]')
+        playlists = collect_playlists(vli[:len(pl_urls)])
+        tvu_pl = dowload_playlists(community_name, playlists, driver)  
+    print()
+    vu_unfiltered = all_urls[len(pl_urls):]
+    video_urls = []
+    for v in vu_unfiltered:
+        if not v in tvu_pl:
+            video_urls.append(v)
+    print(f'Filtered {len(vu_unfiltered) - len(video_urls)} videos')
+    path = f'{community_name}/videos'
+    pl_len = len(playlists)
+
+    vu_len = download_video_list(path, video_urls)
+    
+    print()
+    print(f'Downloaded {vu_len} videos and {pl_len} playlists with {len(tvu_pl)} videos. ☺')
+    
+    #print(*enumerate(playlist_urls), sep='\n')
+
+
+#############################################
+
+
 
 def get_available(community_name, exist):
     if not exist:
@@ -53,16 +271,27 @@ def req_get(url):
         except(ConnectTimeout):
             print('req is fail, trying again...')
 
-def make_driver():
+def make_driver(load_cookies=False):
     options = webdriver.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--headless=new")
+    options.add_argument("--enable-javascript")
+
     driver = webdriver.Chrome(options=options)
+    
+
+    if load_cookies:
+        driver.get('https://m.vk.com/docs?oid=-198891591')
+        cookies = get_cookies_from_file()
+        sleep(10)
+        for cookie in cookies:
+          #  print(cookie)
+            driver.add_cookie(cookie)
     return driver
 
 def get_albums():
-    url = 'url with m'
+    url = 'url with m' # <==== START
     driver = make_driver()
     print(f'getting {url}')
     driver.get(url)
@@ -211,26 +440,44 @@ def get_photo(driver, href, num, name, community_name):
         file.write(photo_resp.content) 
 
 
-def try_except(ex, mes, meth, *params): 
+def try_except(ex, mes, meth, *params, enter_before=0): 
+    try_count = 10
     i = 0
     while True:
         try: 
             res = meth(*params)
+            if not res:
+                raise ex
             if i > 0:
-                print()
+                print(f'{i}: {mes} done.')
 
             return res
             break
         except(ex):
             i +=1
-            if i > 20:
+            if i > try_count:
                 print()
                 print(f'{meth.__name__} is fail')
                 return
             else:
+                if enter_before:
+                    print(f'{i}: {mes} done.')
+                    enter_before = 0
                 print(f'{i}: {mes}', end='\r')
             sleep(1.5)
 
+
+def try_create_dir(path):
+    try:
+        os.mkdir(path)
+    except(FileExistsError):
+        print(f'{path} directory exist')
+
+
 if __name__ == '__main__': 
-   #get_album()
-   get_albums()
+   path = '/storage/4F00-1E00/Ringtones'
+   if path:
+       os.chdir(path)
+       print(f'Current workdir: {path}')
+   #get_albums()
+   download_all_videos()
