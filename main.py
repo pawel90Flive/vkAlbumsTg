@@ -113,28 +113,33 @@ def prepare_playlist(i, v):
     return (url, name, amount)
 
 
-def dowload_playlists(comm_name, playlists, driver):
-    print(f'downloading {len(playlists)} playlists')
+def dowload_playlists(comm_name, playlists, driver, start=0):
+    pl_len = len(playlists)
+    print(f'downloading {pl_len}-{start}={pl_len-start} playlists')
     total_video_urls = []
-    for pl in playlists:
+    for pl in playlists[start:]:
         print(f'{pl[1]} downloading with {pl[2]} videos')
         path = f'{comm_name}/playlists/{pl[1]}'
         try_create_dir(path)
         if pl[2]:
+            pl_name = f'{pl[1]}/{len(playlists)}'
             driver.get(pl[0])
-            v_urls = dump_or_get_data(driver, path, pl[1], 0)
+            v_urls, start = dump_or_get_data(driver, path, pl[1], 0)
             total_video_urls += v_urls
-            download_video_list(path, v_urls)
+            download_video_list(path, v_urls, start, pl_name)
     
     return total_video_urls
 
 
 def dump_or_get_data(driver, path, pickle_name, is_pl=False):
+    start = 0
     data = []
     pickle_path = f'{path}/{pickle_name}.pkl'
     try:
         data = pickle.load(open(pickle_path, "rb"))
         print(f'using cached video urls for {pickle_name}...')
+        listdir = os.listdir(path)
+        start = len(listdir) - 2
     except(FileNotFoundError):
         print(f'no cached video urls for {pickle_name}.')
     if not data:
@@ -145,12 +150,15 @@ def dump_or_get_data(driver, path, pickle_name, is_pl=False):
             vli = collect_vli(driver, 1)
             data = [v.get_attribute('href') for v in vli] 
         pickle.dump(data, open(pickle_path,"wb"))
-    return data
+    return data, start
 
-def download_video_list(path, video_urls):
+def download_video_list(path, video_urls, start, pl_name=None):
     vu_len = len(video_urls)
-    print(f'START TO DOWNLOAD {vu_len} VIDEOS!')
-    for i, vu in enumerate(video_urls):
+    print(f'START TO DOWNLOAD {vu_len}-{start}={vu_len-start} VIDEOS!')
+    for i, vu in enumerate(video_urls[start:], start=start):
+        if pl_name:
+            print(pl_name, ': ', end='\t\t', sep='')
+        
         vd(path, vu, i, vu_len)
     return vu_len
 
@@ -189,15 +197,15 @@ def download_all_videos(url=None, driver=None):
         
         pl_path = f'{community_name}/playlists'
         pl_pickle_path = f'playlists'
-        playlists = dump_or_get_data(driver, 
+        playlists, start_pl = dump_or_get_data(driver, 
                                  pl_path, 
                                  pl_pickle_path,
                                  1)
-        tvu_pl = dowload_playlists(community_name, playlists, driver)  
+        tvu_pl = dowload_playlists(community_name, playlists, driver, start_pl)  
         driver.get(url)
     v_path = f'{community_name}/videos'
     v_pickle_path = f'videos'
-    all_urls = dump_or_get_data(driver, 
+    all_urls, start_videos = dump_or_get_data(driver, 
                              v_path, 
                              v_pickle_path,
                              0)
@@ -221,7 +229,7 @@ def download_all_videos(url=None, driver=None):
     path = f'{community_name}/videos'
     pl_len = len(playlists)
 
-    vu_len = download_video_list(path, video_urls)
+    vu_len = download_video_list(path, video_urls, start_videos)
     
     print()
     print(f'Downloaded {vu_len} videos and {pl_len} playlists with {len(tvu_pl)} videos. ☺')
