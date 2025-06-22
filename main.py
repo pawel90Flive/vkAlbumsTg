@@ -113,7 +113,8 @@ def prepare_playlist(i, v):
     return (url, name, amount)
 
 
-def dowload_playlists(comm_name, playlists, driver, start=0):
+def download_playlists(comm_name, playlists, driver, start=0):
+    start = 0
     pl_len = len(playlists)
     print(f'downloading {pl_len}-{start}={pl_len-start} playlists')
     total_video_urls = []
@@ -154,19 +155,33 @@ def dump_or_get_data(driver, path, pickle_name, is_pl=False):
         pickle.dump(data, open(pickle_path,"wb"))
     return data, start
 
+
 def download_video_list(path, video_urls, start, pl_name=None):
     vu_len = len(video_urls)
+    if start + 1 == vu_len:
+        ld = os.listdir(path)
+        for i in range(len(ld)-1, -1, -1):
+            r = ld[i]
+            if r[:r.find('_')] == str(start):
+                if r[r.rfind('.'):] == 'part':
+                    break
+                else:
+                    print('Already downloaded')
+                    return vu_len
+
     print(f'START TO DOWNLOAD {vu_len}-{start}={vu_len-start} VIDEOS!')
+        
     for i, vu in enumerate(video_urls[start:], start=start):
         if pl_name:
-            print(pl_name, ': ', end='\t\t', sep='')
-        
+            print(pl_name, ': ', end=' ', sep='')
+         
         vd(path, vu, i, vu_len)
     return vu_len
 
 
 def download_all_videos(url=None, driver=None):
-    url = 'https://m.vkvideo.ru/@metaaaa' # start for videos
+    if not url:
+        url = 'https://m.vkvideo.ru/@metaaaa' # start for videos
     if not driver:
         driver = make_driver()
     print(f'getting {url}')
@@ -203,7 +218,7 @@ def download_all_videos(url=None, driver=None):
                                  pl_path, 
                                  pl_pickle_path,
                                  1)
-        tvu_pl = dowload_playlists(community_name, playlists, driver, start_pl)  
+        tvu_pl = download_playlists(community_name, playlists, driver, start_pl)  
         driver.get(url)
     v_path = f'{community_name}/videos'
     v_pickle_path = f'videos'
@@ -220,7 +235,7 @@ def download_all_videos(url=None, driver=None):
                     By.CSS_SELECTOR,
                     'a[data-testid="video_list_item"]')
         playlists = collect_playlists(vli[:len(pl_urls)])
-        tvu_pl = dowload_playlists(community_name, playlists, driver)  
+        tvu_pl = download_playlists(community_name, playlists, driver)  
     print()
     vu_unfiltered = all_urls[len(pl_urls):]
     video_urls = [] # max and filter
