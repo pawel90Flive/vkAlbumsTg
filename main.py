@@ -140,6 +140,8 @@ def dump_or_get_data(driver, path, pickle_name, is_pl=False):
         print(f'using cached video urls for {pickle_name}...')
         listdir = os.listdir(path)
         start = len(listdir) - 2
+        if start < 0:
+            start = 0
     except(FileNotFoundError):
         print(f'no cached video urls for {pickle_name}.')
     if not data:
@@ -221,10 +223,13 @@ def download_all_videos(url=None, driver=None):
         tvu_pl = dowload_playlists(community_name, playlists, driver)  
     print()
     vu_unfiltered = all_urls[len(pl_urls):]
-    video_urls = []
+    video_urls = [] # max and filter
+    tvu_pl = [u[:u.find('?')] for u in tvu_pl]
     for v in vu_unfiltered:
-        if not v in tvu_pl:
+        if not v[:v.find('?')] in tvu_pl:
             video_urls.append(v)
+
+
     print(f'Filtered {len(vu_unfiltered) - len(video_urls)} videos')
     path = f'{community_name}/videos'
     pl_len = len(playlists)

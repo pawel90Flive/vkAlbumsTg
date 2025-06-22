@@ -20,4 +20,4 @@ def video_download(path, v_url, i, vu_len):
 
 
 if __name__ == '__main__':
-    #video_download('tvar/playlists/1_pl_69', 'https://m.vkvideo.ru/video-217672821_456239602?from=video', 45)
+    video_download('tvar/playlists/1_pl_69', 'https://m.vkvideo.ru/video-217672821_456239602?from=video', 45)
